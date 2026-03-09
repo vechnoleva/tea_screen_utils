@@ -1,32 +1,33 @@
 <!-- Plugin Configuration File: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <!-- Unique identifier of the plugin. It should be FQN, cannot be changed between the plugin versions. -->
-    <id>org.example.newscreentea</id>
+    <id>org.example.newscreentea.rename-screen</id>
+    <name>Rename Screen</name>
+    <vendor url="https://github.com">Developer</vendor>
 
-    <!-- Public plugin name should be written in Title Case.
-         Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-name -->
-    <name>Newscreentea</name>
-
-    <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
-    <vendor url="https://www.yourcompany.com">YourCompany</vendor>
-
-    <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
-         Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-description -->
     <description><![CDATA[
-        Enter short description for your plugin here.<br>
-        <em>most HTML tags may be used</em>
+        Renames all artifacts of an Android MVP/MVI screen in one operation:<br/>
+        Fragment, Presenter, Contract, Params, Mapper, Adapter, DI, layout file, and the Screens entry.
     ]]></description>
 
-    <!-- Product and plugin compatibility requirements.
-         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
-    <depends>com.intellij.modules.compose</depends>
-
-    <depends>org.jetbrains.kotlin</depends>
-    <resource-bundle>messages.MyMessageBundle</resource-bundle>
-    <!-- Extensions defined by the plugin.
-         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
+    <!-- Core platform APIs (PSI, refactoring, etc.) -->
+    <depends>com.intellij.modules.platform</depends>
+    <!-- Java/Kotlin PSI (PsiClass, PsiShortNamesCache, RenameProcessor, …) -->
+    <depends>com.intellij.modules.java</depends>
+    <!-- Android-specific support (always present in Android Studio) -->
+    <depends>org.jetbrains.android</depends>
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow id="MyToolWindow" factoryClass="org.example.newscreentea.MyToolWindowFactory"
-                    icon="AllIcons.Toolwindows.ToolWindowPalette"/>
+        <notificationGroup id="Rename Screen" displayType="BALLOON"/>
     </extensions>
+
+    <actions>
+        <action id="org.example.newscreentea.RenameScreenAction"
+                class="org.example.newscreentea.RenameScreenAction"
+                text="Rename Screen (All Files)"
+                description="Renames all artifacts of an Android screen: Fragment, Presenter, Contract, layout, etc.">
+            <!-- Available via right-click in the code editor -->
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <!-- Available via right-click in the Project tree -->
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+    </actions>
 </idea-plugin>
