@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.psi.JavaDirectoryService
 import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiDocumentManager
@@ -95,6 +96,11 @@ class MultiRenameProcessor(
             // (стабильны при мутациях PSI) и переименовываем файлы после патча документов.
             private var fileRenames: List<Pair<VirtualFile, String>> = emptyList()
 
+            // Все .kt-файлы в директории экрана (рекурсивно, включая вложенные папки).
+            // Используется в шаге 2б для обновления package-объявлений во всех файлах,
+            // в том числе в тех, чьи имена не содержат имя экрана (делегаты, VM и т.п.).
+            private var allScreenKtFiles: List<VirtualFile> = emptyList()
+
             // Полное имя пакета директории экрана ДО переименования.
             // Вычисляется как «пакет родительской директории» + «.имя_папки_экрана».
             // Используется для точечной замены в объявлениях package: заменяем весь
@@ -112,7 +118,7 @@ class MultiRenameProcessor(
                 // PSI-операции чтения (включая findUsages) должны быть обёрнуты
                 // в read action при выполнении на фоновом потоке.
                 ApplicationManager.getApplication().runReadAction {
-                    // Захватываем пакет директории экрана до любых переименований.
+                    // Захватываем пакет директории экрана и все .kt-файлы в ней до любых переименований.
                     renames.entries.firstOrNull { (el, _) -> el is PsiDirectory }
                         ?.let { (dirEl, newDirName) ->
                             val dir = dirEl as PsiDirectory
@@ -122,6 +128,17 @@ class MultiRenameProcessor(
                             val parentPkg = if (parentDir != null) jds?.getPackage(parentDir)?.qualifiedName else null
                             oldDirPackage = if (parentPkg != null) "$parentPkg.${dir.name}" else dir.name
                             newDirPackage = if (parentPkg != null) "$parentPkg.$newDirName" else newDirName
+
+                            // Рекурсивно собираем все .kt-файлы в директории экрана.
+                            // Это нужно для обновления package во вложенных папках (adapter/employee/ и т.п.),
+                            // которые не попадают в fileRenames, т.к. их имена не содержат имя экрана.
+                            val files = mutableListOf<VirtualFile>()
+                            VfsUtilCore.iterateChildrenRecursively(
+                                dir.virtualFile,
+                                { vf -> !vf.path.contains("/build/") },
+                                { vf -> if (!vf.isDirectory && vf.name.endsWith(".kt")) files.add(vf); true }
+                            )
+                            allScreenKtFiles = files
                         }
 
                     usagesPerProcessor = renames.map { (element, newName) ->
@@ -216,16 +233,18 @@ class MultiRenameProcessor(
                         //   newDirPackage = "ru.may24...okolo.employees.newscreenname"
                         //   результат:     package ...okolo.employees.newscreenname.adapter  ✓
                         if (oldDirPackage.isNotEmpty() && oldDirPackage != newDirPackage) {
-                            fileRenames
-                                .filter { (_, n) -> n.endsWith(".kt") }
-                                .forEach { (vFile, _) ->
-                                    val doc = fdm.getDocument(vFile) ?: return@forEach
-                                    // Фиксируем отложенные PSI-операции (переименование класса).
-                                    pdm.doPostponedOperationsAndUnblockDocument(doc)
-                                    val text = doc.text
-                                    val updated = text.replace(oldDirPackage, newDirPackage)
-                                    if (updated != text) doc.replaceString(0, doc.textLength, updated)
-                                }
+                            // Итерируем ВСЕ .kt-файлы директории экрана (включая вложенные папки).
+                            // Для файлов из fileRenames (класс переименован на шаге 1) —
+                            // doPostponedOperations фиксирует отложенные PSI-мутации и разблокирует документ.
+                            // Для остальных файлов (делегаты, VM и т.п.) — это безопасный no-op,
+                            // т.к. их документы не заблокированы: их PSI на шаге 1 не менялся.
+                            allScreenKtFiles.forEach { vFile ->
+                                val doc = fdm.getDocument(vFile) ?: return@forEach
+                                pdm.doPostponedOperationsAndUnblockDocument(doc)
+                                val text = doc.text
+                                val updated = text.replace(oldDirPackage, newDirPackage)
+                                if (updated != text) doc.replaceString(0, doc.textLength, updated)
+                            }
                         }
 
                         // Шаг 3: переименовываем физические .kt / .xml файлы через VirtualFile.
