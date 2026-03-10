@@ -1,6 +1,6 @@
 <!-- Plugin Configuration File: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>org.example.tea_rename_screen.rename-screen</id>
+    <id>org.example.tea_screen_utils.rename-screen</id>
     <name>Rename Screen</name>
     <vendor url="https://github.com">Developer</vendor>
 
@@ -20,8 +20,14 @@
     </extensions>
 
     <actions>
-        <action id="org.example.tea_rename_screen.RenameScreenAction"
-                class="org.example.tea_rename_screen.RenameScreenAction"
+        <action id="org.example.tea_screen_utils.NewTeaScreenAction"
+                class="org.example.tea_screen_utils.NewTeaScreenAction"
+                text="New Tea Screen"
+                description="Creates MVP screen boilerplate: Fragment, Contract, Presenter, DI, layout, and optional Adapter/Mapper/Params.">
+            <add-to-group group-id="NewGroup" anchor="first"/>
+        </action>
+        <action id="org.example.tea_screen_utils.RenameScreenAction"
+                class="org.example.tea_screen_utils.RenameScreenAction"
                 text="Rename Screen (All Files)"
                 description="Renames all artifacts of an Android screen: Fragment, Presenter, Contract, layout, etc.">
             <!-- Available via right-click in the code editor -->
