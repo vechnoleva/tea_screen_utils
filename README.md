@@ -69,7 +69,7 @@
 ./gradlew buildPlugin
 
 # Готовый zip:
-# build/distributions/newscreentea-1.0-SNAPSHOT.zip
+# build/distributions/tea_rename_screen-1.0-SNAPSHOT.zip
 ```
 
 Установите полученный `.zip` через **Settings → Plugins → ⚙ → Install Plugin from Disk…**
@@ -79,7 +79,7 @@
 ## Структура проекта
 
 ```
-src/main/kotlin/org/example/newscreentea/
+src/main/kotlin/org/example/tea_rename_screen/
 ├── ScreenNameUtils.kt        # Преобразования строк (PascalCase ↔ snake_case, имена файлов)
 ├── ScreenElementsFinder.kt   # Поиск PSI-элементов экрана по индексу IDE
 ├── MultiRenameProcessor.kt   # Пакетное переименование через RenameProcessor + VirtualFile

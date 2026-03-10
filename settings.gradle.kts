@@ -1,1 +1,1 @@
-rootProject.name = "newscreentea"
+rootProject.name = "tea_rename_screen"

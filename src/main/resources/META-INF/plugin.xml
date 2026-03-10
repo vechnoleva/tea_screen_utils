@@ -1,6 +1,6 @@
 <!-- Plugin Configuration File: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>org.example.newscreentea.rename-screen</id>
+    <id>org.example.tea_rename_screen.rename-screen</id>
     <name>Rename Screen</name>
     <vendor url="https://github.com">Developer</vendor>
 
@@ -20,8 +20,8 @@
     </extensions>
 
     <actions>
-        <action id="org.example.newscreentea.RenameScreenAction"
-                class="org.example.newscreentea.RenameScreenAction"
+        <action id="org.example.tea_rename_screen.RenameScreenAction"
+                class="org.example.tea_rename_screen.RenameScreenAction"
                 text="Rename Screen (All Files)"
                 description="Renames all artifacts of an Android screen: Fragment, Presenter, Contract, layout, etc.">
             <!-- Available via right-click in the code editor -->
