@@ -8,6 +8,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.JavaDirectoryService
+import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -90,8 +92,18 @@ class MultiRenameProcessor(
 
             // RenameProcessor переименовывает объявление класса и все его ссылки, но НЕ
             // переименовывает физический .kt-файл с этим классом. Сохраняем ссылки VirtualFile
-            // (стабильны при мутациях PSI) и переименовываем файлы после переименования классов.
+            // (стабильны при мутациях PSI) и переименовываем файлы после патча документов.
             private var fileRenames: List<Pair<VirtualFile, String>> = emptyList()
+
+            // Полное имя пакета директории экрана ДО переименования.
+            // Вычисляется как «пакет родительской директории» + «.имя_папки_экрана».
+            // Используется для точечной замены в объявлениях package: заменяем весь
+            // пакет экрана целиком, а не только последний сегмент — это защищает от
+            // случайных совпадений с одноимёнными родительскими пакетами.
+            // Пример: ...okolo.employees.employees → только второй employees заменяется,
+            //         первый (родительский пакет) остаётся нетронутым.
+            private var oldDirPackage: String = ""
+            private var newDirPackage: String = ""
 
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = true
@@ -100,6 +112,18 @@ class MultiRenameProcessor(
                 // PSI-операции чтения (включая findUsages) должны быть обёрнуты
                 // в read action при выполнении на фоновом потоке.
                 ApplicationManager.getApplication().runReadAction {
+                    // Захватываем пакет директории экрана до любых переименований.
+                    renames.entries.firstOrNull { (el, _) -> el is PsiDirectory }
+                        ?.let { (dirEl, newDirName) ->
+                            val dir = dirEl as PsiDirectory
+                            val jds = JavaDirectoryService.getInstance()
+                            // Пакет родительской директории + имя папки = полный пакет экрана.
+                            val parentDir = dir.parentDirectory
+                            val parentPkg = if (parentDir != null) jds?.getPackage(parentDir)?.qualifiedName else null
+                            oldDirPackage = if (parentPkg != null) "$parentPkg.${dir.name}" else dir.name
+                            newDirPackage = if (parentPkg != null) "$parentPkg.$newDirName" else newDirName
+                        }
+
                     usagesPerProcessor = renames.map { (element, newName) ->
                         val proc = AccessibleRenameProcessor(project, element, newName)
                         proc to proc.findUsages()
@@ -143,15 +167,15 @@ class MultiRenameProcessor(
                         usagesPerProcessor.forEach { (proc, usages) ->
                             proc.performRefactoring(usages)
                         }
-                        // Шаг 2: переименовываем физические .kt / .xml файлы через VirtualFile.
-                        fileRenames.forEach { (vFile, newName) ->
-                            try {
-                                vFile.rename(null, newName)
-                            } catch (_: java.io.IOException) { /* лучшее усилие */
-                            }
-                        }
 
-                        // Шаг 3: исправляем имя ресурса лейаута и имя класса View Binding
+                        val fdm = FileDocumentManager.getInstance()
+                        val pdm = PsiDocumentManager.getInstance(project)
+
+                        // Шаги 2а и 2б выполняются ДО физического переименования файлов (шаг 3),
+                        // пока связка VirtualFile → Document актуальна и документы заблокированы
+                        // именно теми PSI-операциями из шага 1, которые мы хотим зафиксировать.
+
+                        // Шаг 2а: исправляем имя ресурса лейаута и имя класса View Binding
                         // внутри файла Fragment.
                         //
                         // RenameProcessor НЕ обновляет их, потому что:
@@ -159,21 +183,12 @@ class MultiRenameProcessor(
                         //    а не на сам XML PsiFile — она невидима для поиска использований файла.
                         //  • FragmentXxxBinding может отсутствовать в PSI-индексе, если проект
                         //    не был синхронизирован после последнего изменения лейаута.
-                        //
-                        // После шагов 1+2 .kt-файл Fragment уже содержит новое имя класса,
-                        // но в нём ещё остаются старые строки ресурса/binding — патчим их
-                        // прямым редактированием документа (безопасно: оба паттерна очень специфичны).
                         val fragmentVFile = fileRenames
                             .firstOrNull { (_, n) -> n.endsWith("Fragment.kt") }?.first
-                        val fdm = FileDocumentManager.getInstance()
-                        val pdm = PsiDocumentManager.getInstance(project)
-
-                        // Шаг 3а: исправляем имя ресурса лейаута и имя класса View Binding
-                        // только внутри файла Fragment.
                         if (fragmentVFile != null) {
                             val doc = fdm.getDocument(fragmentVFile)
                             if (doc != null) {
-                                // Разблокируем документ, заблокированный ожидающими PSI-операциями из шага 1.
+                                // Фиксируем отложенные PSI-операции из шага 1 в документ.
                                 pdm.doPostponedOperationsAndUnblockDocument(doc)
                                 val oldLayout = ScreenNameUtils.toLayoutFileName(oldScreenName)
                                     .removeSuffix(".xml")          // "fragment_old_name"
@@ -190,24 +205,37 @@ class MultiRenameProcessor(
                             }
                         }
 
-                        // Шаг 3б: исправляем объявление `package` в каждом переименованном .kt-файле.
-                        // RenameProcessor для PsiDirectory должен это делать, но документы
-                        // оказываются заблокированы после мутаций PSI из шага 1, и обновление
-                        // молча пропускается. Патчим явно для каждого файла пакета экрана.
-                        val oldFolder = ScreenNameUtils.toFolderName(oldScreenName) // "oldscreen"
-                        val newFolder = ScreenNameUtils.toFolderName(newScreenName) // "newscreen"
-                        if (oldFolder != newFolder) {
+                        // Шаг 2б: исправляем объявление `package` в каждом переименованном .kt-файле.
+                        //
+                        // Заменяем ПОЛНОЕ имя пакета директории экрана (oldDirPackage → newDirPackage),
+                        // а не только последний сегмент. Это критично, когда имя папки экрана совпадает
+                        // с именем родительского пакета — сегментная замена затронула бы оба вхождения.
+                        //
+                        // Пример: package ...okolo.employees.employees.adapter
+                        //   oldDirPackage = "ru.may24...okolo.employees.employees"
+                        //   newDirPackage = "ru.may24...okolo.employees.newscreenname"
+                        //   результат:     package ...okolo.employees.newscreenname.adapter  ✓
+                        if (oldDirPackage.isNotEmpty() && oldDirPackage != newDirPackage) {
                             fileRenames
                                 .filter { (_, n) -> n.endsWith(".kt") }
                                 .forEach { (vFile, _) ->
                                     val doc = fdm.getDocument(vFile) ?: return@forEach
+                                    // Фиксируем отложенные PSI-операции (переименование класса).
                                     pdm.doPostponedOperationsAndUnblockDocument(doc)
                                     val text = doc.text
-                                    // ".$oldFolder" ограничивает замену сегментом пакета,
-                                    // предотвращая случайные совпадения в других идентификаторах.
-                                    val updated = text.replace(".$oldFolder", ".$newFolder")
+                                    val updated = text.replace(oldDirPackage, newDirPackage)
                                     if (updated != text) doc.replaceString(0, doc.textLength, updated)
                                 }
+                        }
+
+                        // Шаг 3: переименовываем физические .kt / .xml файлы через VirtualFile.
+                        // Выполняется ПОСЛЕ патча документов, чтобы гарантировать,
+                        // что документы сохраняют обновлённое содержимое (новое имя класса + пакет).
+                        fileRenames.forEach { (vFile, newName) ->
+                            try {
+                                vFile.rename(null, newName)
+                            } catch (_: java.io.IOException) { /* лучшее усилие */
+                            }
                         }
                     }
                 )

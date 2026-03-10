@@ -78,6 +78,9 @@ class RenameScreenDialog(
         addPreview("  Папка / пакет:")    { ScreenNameUtils.toFolderName(it) }
         addPreview("  Файл лейаута:")     { ScreenNameUtils.toLayoutFileName(it) }
         addPreview("  Binding-класс:")    { ScreenNameUtils.toBindingClassName(it) }
+        row++
+        row++
+        panel.add(JBLabel("Created by Levan Davityan ©"), gbc(0))
 
         return panel
     }
