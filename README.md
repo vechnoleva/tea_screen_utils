@@ -1,20 +1,53 @@
-# Rename Screen (All Files)
+# Tea Screen Utils
 
-Плагин для **Android Studio**, который переименовывает все артефакты MVP-экрана одной операцией — вместо того чтобы переименовывать каждый файл вручную.
+Плагин для **Android Studio** — набор инструментов для работы с MVP-экранами. Позволяет создавать новые экраны и переименовывать существующие одним действием.
 
 > Совместим с Android Studio Hedgehog (AI-233) и выше.
 
 ---
 
-## Зачем нужен плагин
+## Инструменты
 
-У каждого Android-экрана обычно есть несколько связанных файлов: фрагмент, презентер, контракт, параметры, маппер, адаптер, DI-модуль, XML-layout и запись в реестре экранов. Стандартный рефакторинг IDE переименовывает только один класс и ссылки на него, но не трогает остальные файлы экрана, имена файлов и объявления пакетов.
+### 1. New Tea Screen
 
-Плагин делает всё это в одно действие с поддержкой отмены (`Ctrl+Z`).
+Генерирует полный boilerplate MVP-экрана по заданному имени и набору опций — вместо того чтобы создавать каждый файл вручную.
+
+**Что создаётся:**
+
+| Артефакт              | Пример                      |
+|-----------------------|-----------------------------|
+| Fragment              | `HomeFragment.kt`           |
+| Contract              | `HomeContract.kt`           |
+| Presenter             | `HomePresenter.kt`          |
+| DI (Module, Component)| `HomeDI.kt`                 |
+| XML-лейаут            | `fragment_home.xml`         |
+| Adapter *(опционально)* | `HomeAdapter.kt`          |
+| Mapper / MapperImpl *(опционально)* | `HomeMapper.kt` |
+| Params *(опционально)*| `HomeParams.kt`             |
+
+Также автоматически добавляет записи в `AppComponent.kt` и `Screens.kt`.
+
+**Опции диалога:**
+
+- **Screen name** — имя экрана в формате PascalCase
+- **Has params** — добавить `Params`-класс и передачу аргументов через `Bundle`
+- **Has RecyclerView** — добавить `Adapter`, `Mapper`, `MapperImpl` и настройку списка
+- **Is Bottom Sheet** — сгенерировать фрагмент на основе `BaseBottomSheetFragment`
+- **Toolbar** — `No Toolbar` / `Titled Toolbar` (добавляет `<include toolbar>` в лейаут и `setupToolbar()` в `initUI`)
+
+**Как использовать:**
+
+1. В дереве проекта **кликните правой кнопкой** на папке, в которой нужно создать экран.
+2. Выберите **New → New Tea Screen**.
+3. Заполните диалог и нажмите **OK**.
 
 ---
 
-## Что переименовывается
+### 2. Rename Screen (All Files)
+
+Переименовывает все артефакты MVP-экрана одной операцией — вместо того чтобы переименовывать каждый файл вручную.
+
+**Что переименовывается:**
 
 | Артефакт               | Пример до                | Пример после             |
 |------------------------|--------------------------|--------------------------|
@@ -31,7 +64,16 @@
 | Пакет/директория       | `…/oldname/`             | `…/newname/`             |
 | Объявление `package`   | `package …oldname`       | `package …newname`       |
 
-Все ссылки на переименованные классы (Kotlin, Java, XML) обновляются автоматически.
+Все ссылки на переименованные классы (Kotlin, Java, XML) обновляются автоматически. Переименование выполняется как единая команда и отменяется одним `Ctrl+Z`.
+
+**Как использовать:**
+
+1. В редакторе или дереве проекта **кликните правой кнопкой** на любом файле экрана.
+2. Выберите **Rename Screen (All Files)** в контекстном меню.
+3. Введите новое имя в формате PascalCase — предпросмотр покажет производные имена в реальном времени.
+4. Нажмите **OK**.
+
+> **Совет.** Перед запуском убедитесь, что IDE завершила индексирование проекта.
 
 ---
 
@@ -43,21 +85,6 @@
 
 ---
 
-## Использование
-
-1. В редакторе или дереве проекта **кликните правой кнопкой** на любом файле экрана:
-   - `SomeScreenFragment.kt`, `SomeScreenPresenter.kt`, `fragment_some_screen.xml` и т.д.
-2. Выберите **«Rename Screen (All Files)»** в контекстном меню.
-3. В появившемся диалоге введите новое имя в формате **PascalCase** (например, `NewScreen`).
-   - Предпросмотр под полем показывает производные имена в реальном времени.
-4. Нажмите **OK** — IDE покажет прогресс-бар, затем переименует все файлы.
-
-Всё переименование выполняется как единая команда — её можно отменить одним `Ctrl+Z`.
-
-> **Совет.** Перед запуском рефакторинга убедитесь, что IDE завершила индексирование проекта (индикатор в правом нижнем углу не крутится).
-
----
-
 ## Сборка из исходников
 
 **Требования:**
@@ -65,26 +92,26 @@
 - Android Studio Narwhal (или другая версия — скорректируйте путь в `build.gradle.kts`)
 
 ```bash
-# Собрать плагин
 ./gradlew buildPlugin
-
-# Готовый zip:
-# build/distributions/tea_rename_screen-1.0-SNAPSHOT.zip
+# Готовый zip: build/distributions/tea_screen_utils-1.0.zip
 ```
-
-Установите полученный `.zip` через **Settings → Plugins → ⚙ → Install Plugin from Disk…**
 
 ---
 
 ## Структура проекта
 
 ```
-src/main/kotlin/org/example/tea_rename_screen/
-├── ScreenNameUtils.kt        # Преобразования строк (PascalCase ↔ snake_case, имена файлов)
-├── ScreenElementsFinder.kt   # Поиск PSI-элементов экрана по индексу IDE
-├── MultiRenameProcessor.kt   # Пакетное переименование через RenameProcessor + VirtualFile
-├── RenameScreenDialog.kt     # Диалог ввода нового имени с предпросмотром
-└── RenameScreenAction.kt     # AnAction — точка входа из контекстного меню
+src/main/kotlin/org/example/tea_screen_utils/
+├── ScreenNameUtils.kt          # Преобразования строк (PascalCase ↔ snake_case, имена файлов)
+├── ScreenElementsFinder.kt     # Поиск PSI-элементов экрана по индексу IDE
+├── MultiRenameProcessor.kt     # Пакетное переименование через RenameProcessor + VirtualFile
+├── RenameScreenDialog.kt       # Диалог ввода нового имени с предпросмотром
+├── RenameScreenAction.kt       # AnAction — точка входа для Rename Screen
+├── NewTeaScreenAction.kt       # AnAction — точка входа для New Tea Screen
+├── NewTeaScreenDialog.kt       # Диалог создания экрана с опциями
+└── NewTeaScreenGenerator.kt    # Генерация файлов и модификация AppComponent/Screens
 ```
 
 ---
+
+*Автор: Levan Davityan*

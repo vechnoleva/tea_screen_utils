@@ -6,11 +6,14 @@ import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
+import java.awt.FlowLayout
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
+import javax.swing.ButtonGroup
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.JRadioButton
 
 class NewTeaScreenDialog(project: Project) : DialogWrapper(project) {
 
@@ -18,11 +21,21 @@ class NewTeaScreenDialog(project: Project) : DialogWrapper(project) {
     private val hasParamsCheck = JBCheckBox("Has params", false)
     private val hasRecyclerViewCheck = JBCheckBox("Has RecyclerView", false)
     private val isBottomSheetCheck = JBCheckBox("Is Bottom Sheet", false)
+    private val isClosableCheck = JBCheckBox("Is Closable", true)
+
+    private val noToolbarRadio = JRadioButton("No Toolbar", true)
+    private val titledToolbarRadio = JRadioButton("Titled Toolbar", false)
+    private val toolbarGroup = ButtonGroup().apply {
+        add(noToolbarRadio)
+        add(titledToolbarRadio)
+    }
 
     val screenName: String get() = nameField.text.trim()
     val hasParams: Boolean get() = hasParamsCheck.isSelected
     val hasRecyclerView: Boolean get() = hasRecyclerViewCheck.isSelected
     val isBottomSheet: Boolean get() = isBottomSheetCheck.isSelected
+    val isClosable: Boolean get() = isClosableCheck.isSelected
+    val hasTitledToolbar: Boolean get() = titledToolbarRadio.isSelected
 
     init {
         title = "New Tea Screen"
@@ -50,6 +63,32 @@ class NewTeaScreenDialog(project: Project) : DialogWrapper(project) {
         panel.add(hasRecyclerViewCheck, gbc(0, 1.0, 2))
         row++
         panel.add(isBottomSheetCheck, gbc(0, 1.0, 2))
+        row++
+
+        isClosableCheck.isVisible = false
+        panel.add(isClosableCheck, gbc(0, 1.0, 2))
+        row++
+
+        val toolbarLabel = JBLabel("Toolbar:")
+        val toolbarPanel = JPanel(FlowLayout(FlowLayout.LEFT, 20, 0)).apply {
+            add(noToolbarRadio)
+            add(titledToolbarRadio)
+        }
+        panel.add(toolbarLabel, gbc(0))
+        panel.add(toolbarPanel, gbc(1, 1.0))
+        row++
+
+        fun updateBottomSheetRelated() {
+            val isBS = isBottomSheetCheck.isSelected
+            isClosableCheck.isVisible = isBS
+            toolbarLabel.isVisible = !isBS
+            toolbarPanel.isVisible = !isBS
+            if (isBS) noToolbarRadio.isSelected = true
+        }
+        isBottomSheetCheck.addActionListener { updateBottomSheetRelated() }
+
+        row++
+        panel.add(JBLabel("Created by Levan Davityan ©"), gbc(0))
 
         return panel
     }

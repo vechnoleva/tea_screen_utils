@@ -15,10 +15,13 @@ class NewTeaScreenGenerator(
     private val screenName: String,
     private val hasParams: Boolean,
     private val hasRecyclerView: Boolean,
-    private val isBottomSheet: Boolean
+    private val isBottomSheet: Boolean,
+    private val isClosable: Boolean,
+    private val hasTitledToolbar: Boolean
 ) {
     private val screenNameLower = screenName.lowercase()
     private val screenNameSnake = ScreenNameUtils.pascalToSnake(screenName)
+    private val needsParams = hasParams || (isBottomSheet && !isClosable)
     private val packageFromFolder: String
 
     init {
@@ -52,7 +55,7 @@ class NewTeaScreenGenerator(
                 }
 
                 // Params optional file
-                if (hasParams) {
+                if (needsParams) {
                     val modelDir = screenDir.createSubdirectory("model")
                     createFile(modelDir, "${screenName}Params.kt", paramsContent())
                 }
@@ -114,7 +117,7 @@ class NewTeaScreenGenerator(
         val doc = FileDocumentManager.getInstance().getDocument(vf) ?: return
 
         val imports = mutableListOf("import $packageFromFolder.${screenName}Fragment")
-        if (hasParams) imports += "import $packageFromFolder.model.${screenName}Params"
+        if (needsParams) imports += "import $packageFromFolder.model.${screenName}Params"
 
         var text = doc.text
         text = addImports(text, imports)
@@ -135,12 +138,18 @@ class NewTeaScreenGenerator(
         appendLine("import android.view.LayoutInflater")
         appendLine("import android.view.View")
         appendLine("import android.view.ViewGroup")
-        if (hasParams) {
+        if (needsParams) {
             appendLine("import androidx.core.os.bundleOf")
             appendLine("import ru.may24.app.core.extensions.parcelable")
         }
-        if (hasRecyclerView) appendLine("import androidx.recyclerview.widget.LinearLayoutManager")
+        if (hasRecyclerView) {
+            appendLine("import androidx.recyclerview.widget.LinearLayoutManager")
+            appendLine("import androidx.recyclerview.widget.LinearLayoutManager.VERTICAL")
+            appendLine("import ru.may24.uikit.ui.adapter.ListViewModel")
+            appendLine("import ru.may24.uikit.ui.adapter.listener.ListItemClickListener")
+        }
         appendLine("import by.kirich1409.viewbindingdelegate.viewBinding")
+        if (hasTitledToolbar) appendLine("import ru.may24.uikit.R as UiKitR")
         if (isBottomSheet) {
             appendLine("import com.google.android.material.bottomsheet.BottomSheetBehavior")
             appendLine("import com.google.android.material.bottomsheet.BottomSheetDialog")
@@ -189,7 +198,7 @@ class NewTeaScreenGenerator(
         appendLine()
         appendLine("    companion object {")
         when {
-            isBottomSheet && hasParams -> {
+            isBottomSheet && needsParams -> {
                 appendLine("        private const val KEY_PARAMS = \"KEY_PARAMS\"")
                 appendLine()
                 appendLine("        fun newInstance(screen: Screens.${screenName}Screen, params: ${screenName}Params): ${screenName}Fragment {")
@@ -255,23 +264,63 @@ class NewTeaScreenGenerator(
         if (isBottomSheet) {
             appendLine()
             appendLine("    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {")
-            appendLine("        val dialog = BottomSheetDialog(requireContext(), theme)")
-            appendLine("        dialog.setOnShowListener {")
-            appendLine("            val bottomSheetDialog = it as BottomSheetDialog")
-            appendLine("            val parentLayout =")
-            appendLine("                bottomSheetDialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)")
-            appendLine("            parentLayout?.let { it ->")
-            appendLine("                val behavior = BottomSheetBehavior.from(it)")
-            appendLine("                behavior.isDraggable = false")
-            appendLine("                behavior.state = BottomSheetBehavior.STATE_EXPANDED")
-            appendLine("            }")
-            appendLine("            bottomSheetDialog.setCancelable(false)")
-            appendLine("            bottomSheetDialog.setCanceledOnTouchOutside(false)")
-            appendLine("        }")
-            appendLine("        return dialog")
+            if (isClosable) {
+                appendLine("        val dialog = super.onCreateDialog(savedInstanceState)")
+                appendLine("        if (dialog is BottomSheetDialog) {")
+                appendLine("            dialog.behavior.skipCollapsed = true")
+                appendLine("            dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED")
+                appendLine("        }")
+                appendLine("        return dialog")
+            } else {
+                appendLine("        val dialog = super.onCreateDialog(savedInstanceState) as BottomSheetDialog")
+                appendLine("        val isClosable = requireNotNull(")
+                appendLine("            requireArguments().parcelable<${screenName}Params>(KEY_PARAMS)")
+                appendLine("        ).isClosable")
+                appendLine("        if (!isClosable) {")
+                appendLine("            lockDialog(dialog)")
+                appendLine("        }")
+                appendLine("        return dialog")
+            }
+            appendLine("    }")
+            appendLine()
+            appendLine("    override fun onDestroy() {")
+            appendLine("        screen?.let { presenter.removeBottomSheetFromQueue(it) }")
+            appendLine("        super.onDestroy()")
             appendLine("    }")
         }
         appendLine()
+        appendLine("    //endregion")
+        appendLine()
+
+        // UI handlers
+        if (hasRecyclerView || hasTitledToolbar) {
+            appendLine("    //region ==================== UI handlers ====================")
+            appendLine()
+            if (hasRecyclerView) {
+                appendLine("    private val itemClickListener = object : ListItemClickListener {")
+                appendLine("        override fun onListItemClicked(delegateViewModel: ListViewModel) {")
+                appendLine("            presenter.onItemClicked(delegateViewModel)")
+                appendLine("        }")
+                appendLine("    }")
+                if (hasTitledToolbar) appendLine()
+            }
+            if (hasTitledToolbar) {
+                appendLine("    val btnBackClickListener = View.OnClickListener { presenter.onBackButtonClicked() }")
+            }
+            appendLine()
+            appendLine("    //endregion")
+            appendLine()
+        }
+
+        // Contract.View
+        appendLine("    //region ==================== Contract.View ====================")
+        appendLine()
+        if (hasRecyclerView) {
+            appendLine("    override fun showItemList(list: List<ListViewModel>) {")
+            appendLine("        adapter.swapItems(list)")
+            appendLine("    }")
+            appendLine()
+        }
         appendLine("    //endregion")
         appendLine()
 
@@ -279,22 +328,13 @@ class NewTeaScreenGenerator(
         appendLine("    //region ==================== DI ====================")
         appendLine()
         appendLine("    private fun configureDI() {")
-        when {
-            isBottomSheet && hasParams -> {
-                appendLine("        val params = requireNotNull(requireArguments().parcelable<${screenName}Params>(KEY_PARAMS))")
-                appendLine("        val component = getAppComponent().plus(${screenName}Module(params, getParentRouter()))")
-            }
-            isBottomSheet -> {
-                appendLine("        val component = getAppComponent().plus(${screenName}Module(getParentRouter()))")
-            }
-            hasParams -> {
-                appendLine("        val params = requireNotNull(requireArguments().parcelable<${screenName}Params>(KEY_PARAMS))")
-                appendLine("        val component = getAppComponent().plus(${screenName}Module(params))")
-            }
-            else -> {
-                appendLine("        val component = getAppComponent().plus(${screenName}Module())")
-            }
+        if (hasParams) {
+            appendLine("        val params = requireNotNull(requireArguments().parcelable<${screenName}Params>(KEY_PARAMS))")
         }
+        val moduleArgs = mutableListOf<String>()
+        if (hasParams) moduleArgs += "params"
+        if (hasRecyclerView) moduleArgs += "itemClickListener"
+        appendLine("        val component = getAppComponent().plus(${screenName}Module(${moduleArgs.joinToString(", ")}))")
         appendLine("        component.inject(this)")
         appendLine("    }")
         appendLine()
@@ -308,8 +348,17 @@ class NewTeaScreenGenerator(
         appendLine("    //region ==================== UI ====================")
         appendLine()
         appendLine("    private fun initUI() = with(binding) {")
+        if (hasTitledToolbar) {
+            appendLine("        setupToolbar(")
+            appendLine("            binding.root,")
+            appendLine("            \"$screenName\",")
+            appendLine("            UiKitR.drawable.ic_back_grey_32,")
+            appendLine("            backButtonEnabled = true,")
+            appendLine("            btnBackClickListener")
+            appendLine("        )")
+        }
         if (hasRecyclerView) {
-            appendLine("        recyclerView.layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)")
+            appendLine("        recyclerView.layoutManager = LinearLayoutManager(context, VERTICAL, false)")
             appendLine("        recyclerView.adapter = adapter")
         }
         appendLine("    }")
@@ -336,7 +385,14 @@ class NewTeaScreenGenerator(
         }
         appendLine("    }")
         appendLine()
-        appendLine("    abstract class Presenter : BaseDisposablePresenter<View>()")
+        if (hasRecyclerView || hasTitledToolbar) {
+            appendLine("    abstract class Presenter : BaseDisposablePresenter<View>() {")
+            if (hasRecyclerView) appendLine("        abstract fun onItemClicked(viewModel: ListViewModel)")
+            if (hasTitledToolbar) appendLine("        abstract fun onBackButtonClicked()")
+            appendLine("    }")
+        } else {
+            appendLine("    abstract class Presenter : BaseDisposablePresenter<View>()")
+        }
         append("}")
     }
 
@@ -345,7 +401,10 @@ class NewTeaScreenGenerator(
         appendLine()
         appendLine("import ru.terrakok.cicerone.Router")
         if (hasParams) appendLine("import $packageFromFolder.model.${screenName}Params")
-        if (hasRecyclerView) appendLine("import $packageFromFolder.mapper.${screenName}Mapper")
+        if (hasRecyclerView) {
+            appendLine("import ru.may24.uikit.ui.adapter.ListViewModel")
+            appendLine("import $packageFromFolder.mapper.${screenName}Mapper")
+        }
         appendLine("import javax.inject.Inject")
         appendLine()
         appendLine("class ${screenName}Presenter @Inject constructor(")
@@ -360,6 +419,14 @@ class NewTeaScreenGenerator(
         appendLine()
         appendLine("    //region ==================== ${screenName}Contract.Presenter ====================")
         appendLine()
+        if (hasRecyclerView) {
+            appendLine("    override fun onItemClicked(viewModel: ListViewModel) = Unit")
+            appendLine()
+        }
+        if (hasTitledToolbar) {
+            appendLine("    override fun onBackButtonClicked() = router.exit()")
+            appendLine()
+        }
         appendLine("    //endregion")
         append("}")
     }
@@ -370,9 +437,6 @@ class NewTeaScreenGenerator(
         appendLine("import dagger.Module")
         appendLine("import dagger.Provides")
         appendLine("import dagger.Subcomponent")
-        appendLine("import javax.inject.Named")
-        appendLine("import ru.may24.app.core.di.NamedDependencies")
-        appendLine("import ru.terrakok.cicerone.Router")
         if (hasParams) appendLine("import $packageFromFolder.model.${screenName}Params")
         if (hasRecyclerView) {
             appendLine("import ru.may24.uikit.ui.adapter.listener.ListItemClickListener")
@@ -387,18 +451,18 @@ class NewTeaScreenGenerator(
         appendLine()
         appendLine("@Module")
 
-        // Constructor: single-line if only router, multiline otherwise
         val ctorLines = mutableListOf<String>()
         if (hasParams) ctorLines += "    private val params: ${screenName}Params,"
         if (hasRecyclerView) ctorLines += "    private val listItemClickListener: ListItemClickListener,"
-        ctorLines += "    private val router: Router? = null,"
 
-        if (ctorLines.size == 1) {
-            appendLine("class ${screenName}Module(private val router: Router? = null) {")
-        } else {
-            appendLine("class ${screenName}Module(")
-            ctorLines.forEach { appendLine(it) }
-            appendLine(") {")
+        when (ctorLines.size) {
+            0 -> appendLine("class ${screenName}Module {")
+            1 -> appendLine("class ${screenName}Module(${ctorLines[0].trim().removeSuffix(",")}) {")
+            else -> {
+                appendLine("class ${screenName}Module(")
+                ctorLines.forEach { appendLine(it) }
+                appendLine(") {")
+            }
         }
         appendLine()
         appendLine("    @Provides")
@@ -418,25 +482,16 @@ class NewTeaScreenGenerator(
             appendLine("    @Provides")
             appendLine("    fun provideMapper(mapperImpl: ${screenName}MapperImpl): ${screenName}Mapper = mapperImpl")
         }
-        appendLine()
-        appendLine("    @Provides")
-        appendLine("    @Named(NamedDependencies.TAB_ROUTER)")
-        appendLine("    fun router(appRouter: Router): Router {")
-        appendLine("        return this.router ?: appRouter")
-        appendLine("    }")
         append("}")
     }
 
     private fun adapterContent(): String = buildString {
         appendLine("package $packageFromFolder.adapter")
         appendLine()
-        appendLine("import $packageFromFolder.adapter.${screenNameLower}item.${screenName}ItemViewModelDelegate")
         appendLine("import ru.may24.uikit.ui.adapter.DiffAdapter")
         appendLine("import javax.inject.Inject")
         appendLine()
-        appendLine("class ${screenName}Adapter @Inject constructor(")
-        appendLine("    ${screenNameLower}ItemViewModelDelegate: ${screenName}ItemViewModelDelegate,")
-        appendLine(") : DiffAdapter() {")
+        appendLine("class ${screenName}Adapter @Inject constructor() : DiffAdapter() {")
         appendLine("    init {")
         appendLine("        delegatesManager")
         appendLine("    }")
@@ -450,7 +505,7 @@ class NewTeaScreenGenerator(
         appendLine()
         appendLine("interface ${screenName}Mapper {")
         appendLine()
-        appendLine("    fun map(): List<ListViewModel>")
+        appendLine("    fun mapToUI(): List<ListViewModel>")
         append("}")
     }
 
@@ -462,7 +517,7 @@ class NewTeaScreenGenerator(
         appendLine()
         appendLine("class ${screenName}MapperImpl @Inject constructor() : ${screenName}Mapper {")
         appendLine()
-        appendLine("    override fun map(): List<ListViewModel> {")
+        appendLine("    override fun mapToUI(): List<ListViewModel> {")
         appendLine("        val viewModels = mutableListOf<ListViewModel>()")
         appendLine("        return viewModels")
         appendLine("    }")
@@ -477,7 +532,8 @@ class NewTeaScreenGenerator(
         appendLine()
         appendLine("@Parcelize")
         appendLine("data class ${screenName}Params(")
-        appendLine("    val someId: String = \"\",")
+        if (hasParams) appendLine("    val someId: String = \"\",")
+        if (isBottomSheet && !isClosable) appendLine("    val isClosable: Boolean,")
         append(") : Parcelable")
     }
 
@@ -489,12 +545,23 @@ class NewTeaScreenGenerator(
         appendLine("    android:layout_width=\"match_parent\"")
         appendLine("    android:layout_height=\"match_parent\">")
         appendLine()
+        if (hasTitledToolbar) {
+            appendLine("    <include")
+            appendLine("        android:id=\"@+id/toolbar\"")
+            appendLine("        layout=\"@layout/titled_toolbar\"")
+            appendLine("        android:layout_width=\"match_parent\"")
+            appendLine("        android:layout_height=\"wrap_content\"")
+            appendLine("        app:layout_constraintTop_toTopOf=\"parent\" />")
+            appendLine()
+        }
         if (hasRecyclerView) {
+            val rvTopConstraint = if (hasTitledToolbar) "@id/toolbar" else "parent"
+            val rvTopAttr = if (hasTitledToolbar) "toBottomOf" else "toTopOf"
             appendLine("    <androidx.recyclerview.widget.RecyclerView")
             appendLine("        android:id=\"@+id/recyclerView\"")
             appendLine("        android:layout_width=\"match_parent\"")
             appendLine("        android:layout_height=\"0dp\"")
-            appendLine("        app:layout_constraintTop_toTopOf=\"parent\"")
+            appendLine("        app:layout_constraintTop_${rvTopAttr}=\"$rvTopConstraint\"")
             appendLine("        app:layout_constraintBottom_toBottomOf=\"parent\"")
             appendLine("        app:layout_constraintStart_toStartOf=\"parent\"")
             appendLine("        app:layout_constraintEnd_toEndOf=\"parent\" />")
@@ -516,14 +583,14 @@ class NewTeaScreenGenerator(
                 appendLine("        override fun getFragment() = ${screenName}Fragment.newInstance(params)")
                 append("    }")
             }
-            isBottomSheet && !hasParams -> {
+            isBottomSheet && !needsParams -> {
                 appendLine("    class ${screenName}Screen : BottomSheetScreen() {")
                 appendLine("        override fun getFragment(): Fragment {")
                 appendLine("            return ${screenName}Fragment.newInstance(this)")
                 appendLine("        }")
                 append("    }")
             }
-            else -> { // isBottomSheet && hasParams
+            else -> { // isBottomSheet && needsParams
                 appendLine("    @Parcelize")
                 appendLine("    class ${screenName}Screen(val params: ${screenName}Params) : BottomSheetScreen(), Parcelable {")
                 appendLine("        override fun getFragment(): Fragment {")

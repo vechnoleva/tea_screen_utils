@@ -2,11 +2,21 @@
 <idea-plugin>
     <id>org.example.tea_screen_utils.rename-screen</id>
     <name>Rename Screen</name>
-    <vendor url="https://github.com">Developer</vendor>
+    <vendor email="levan.davityan@gmail.com" url="https://github.com/leva">Levan Davityan</vendor>
 
     <description><![CDATA[
-        Renames all artifacts of an Android MVP/MVI screen in one operation:<br/>
-        Fragment, Presenter, Contract, Params, Mapper, Adapter, DI, layout file, and the Screens entry.
+        A growing toolkit for working with Android MVP screens in Android Studio.<br/>
+        <br/>
+        <b>Current features:</b><br/>
+        <ul>
+            <li><b>New Tea Screen</b> — generates full MVP boilerplate (Fragment, Contract, Presenter, DI, layout,
+                and optional Adapter, Mapper, Params) with a single dialog. Supports params, RecyclerView,
+                Bottom Sheet, and Titled Toolbar variants.</li>
+            <li><b>Rename Screen (All Files)</b> — renames all screen artifacts in one refactoring operation:
+                Fragment, Presenter, Contract, Params, Mapper, Adapter, DI, layout file, package, and the Screens entry.</li>
+        </ul>
+        <br/>
+        More tools may be added in future versions.
     ]]></description>
 
     <!-- Core platform APIs (PSI, refactoring, etc.) -->
@@ -23,7 +33,8 @@
         <action id="org.example.tea_screen_utils.NewTeaScreenAction"
                 class="org.example.tea_screen_utils.NewTeaScreenAction"
                 text="New Tea Screen"
-                description="Creates MVP screen boilerplate: Fragment, Contract, Presenter, DI, layout, and optional Adapter/Mapper/Params.">
+                description="Creates MVP screen boilerplate: Fragment, Contract, Presenter, DI, layout, and optional Adapter/Mapper/Params."
+                icon="/icons/newTeaScreen.svg">
             <add-to-group group-id="NewGroup" anchor="first"/>
         </action>
         <action id="org.example.tea_screen_utils.RenameScreenAction"
